@@ -26,14 +26,22 @@ func (cpu *CPU6502) ConnectBus(bus *Bus) {
 	cpu.bus = bus
 }
 
-func (cpu *CPU6502) IMP() {
+func (cpu *CPU6502) clockSignal() {
+
+}
+
+func (cpu *CPU6502) resetSignal() {
+
+}
+
+func (cpu *CPU6502) interruptRequestSignal() {
 
 }
 
 func (cpu *CPU6502) write(addr uint16, data uint8) {
-	cpu.bus.write(addr, data)
+	cpu.bus.Write(addr, data)
 }
 
 func (cpu *CPU6502) read(addr uint16, readOnly bool) uint8 {
-	return cpu.bus.read(addr, false)
+	return cpu.bus.Read(addr, false)
 }

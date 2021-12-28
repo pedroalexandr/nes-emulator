@@ -18,13 +18,13 @@ func NewBus() *Bus {
 	return newBus
 }
 
-func (bus *Bus) write(addr uint16, data uint8) {
+func (bus *Bus) Write(addr uint16, data uint8) {
 	if addr >= 0x0000 && addr <= 0xFFFF {
 		bus.ram[addr] = data
 	}
 }
 
-func (bus *Bus) read(addr uint16, readOnly bool) uint8 {
+func (bus *Bus) Read(addr uint16, readOnly bool) uint8 {
 	if addr >= 0x0000 && addr <= 0xFFFF {
 		return bus.ram[addr]
 	}
