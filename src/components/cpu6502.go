@@ -1,15 +1,19 @@
 package components
 
+import "reflect"
+
+type Flag uint8
+
 // FLAGS
 const (
-	carryBit          = 1 << 0
-	zero              = 1 << 1
-	disableInterrupts = 1 << 2
-	decimalMode       = 1 << 3
-	break_            = 1 << 4
-	unused            = 1 << 5
-	overflow          = 1 << 6
-	negative          = 1 << 7
+	carryBit          Flag = 1 << 0
+	zero              Flag = 1 << 1
+	disableInterrupts Flag = 1 << 2
+	decimalMode       Flag = 1 << 3
+	break_            Flag = 1 << 4
+	unused            Flag = 1 << 5
+	overflow          Flag = 1 << 6
+	negative          Flag = 1 << 7
 )
 
 type instruction struct {
@@ -26,7 +30,7 @@ type CPU6502 struct {
 	yReg                uint8
 	stackPointerReg     uint8
 	programCounterReg   uint16
-	statusReg           uint8
+	statusReg           Flag
 	fetchedData         uint8
 	absoluteAddress     uint16
 	relativeAddress     uint16
@@ -65,6 +69,21 @@ func (this *CPU6502) ConnectBus(bus *Bus) {
 	this.bus = bus
 }
 
+func (this *CPU6502) setFlag(flag Flag, value bool) {
+	if value {
+		this.statusReg |= flag
+	} else {
+		this.statusReg &= ^flag
+	}
+}
+
+func (this *CPU6502) getFlag(flag Flag) uint8 {
+	if (this.statusReg & flag) > 0 {
+		return 1
+	}
+	return 0
+}
+
 func (this *CPU6502) ClockSignal() {
 	if this.amountOfClockCycles == 0 {
 		this.opCode = this.Read(this.programCounterReg, false)
@@ -91,8 +110,14 @@ func (this *CPU6502) NonMaskableInterruptRequestSignal() {
 
 }
 
-func (this *CPU6502) FetchData() {
+func (this *CPU6502) FetchData() uint8 {
+	addressingModeIsNotImplied := !(reflect.ValueOf(this.lookup[this.opCode].addressingMode).Pointer() == reflect.ValueOf(this.IMP).Pointer())
 
+	if addressingModeIsNotImplied {
+		this.fetchedData = this.Read(this.absoluteAddress, false)
+	}
+
+	return this.fetchedData
 }
 
 func (this *CPU6502) Write(addr uint16, data uint8) {
@@ -103,6 +128,7 @@ func (this *CPU6502) Read(addr uint16, readOnly bool) uint8 {
 	return this.bus.Read(addr, false)
 }
 
+// Addressing Modes
 func (this *CPU6502) IMP() uint8 {
 	this.fetchedData = this.accumulatorReg
 	return 0
@@ -239,4 +265,180 @@ func (this *CPU6502) IZY() uint8 {
 	} else {
 		return 0
 	}
+}
+
+// Operations
+func (this *CPU6502) ERR() uint8 { // Non-legitimate OpCode handling
+
+}
+
+func (this *CPU6502) ADC() uint8 {
+	this.FetchData()
+	temp := uint16(this.accumulatorReg) + uint16(this.fetchedData) + uint16(this.getFlag(carryBit))
+	this.setFlag(carryBit, temp > 255)
+	this.setFlag(zero, (temp&0x00FF) == 0)
+	this.setFlag(negative, temp&0x80 != 0)
+
+	hasOverflowed := (^(uint16(this.accumulatorReg) ^ uint16(this.fetchedData)) & (uint16(this.accumulatorReg) ^ uint16(temp)) & 0x0080) != 0
+	this.setFlag(overflow, hasOverflowed)
+
+	this.accumulatorReg = uint8(temp & 0x00FF)
+
+	return 1
+}
+
+func (this *CPU6502) AND() uint8 {
+	this.FetchData()
+	this.accumulatorReg &= this.fetchedData
+	this.setFlag(zero, this.accumulatorReg == 0x00)
+	this.setFlag(negative, this.accumulatorReg&0x80 != 0)
+	return 1
+}
+
+func (this *CPU6502) BCS() uint8 {
+	if this.getFlag(carryBit) == 1 {
+		this.amountOfClockCycles++
+		this.absoluteAddress = this.programCounterReg + this.relativeAddress
+
+		needsToCrossAPageBoundary := (this.absoluteAddress & 0xFF00) != (this.programCounterReg & 0xFF00)
+
+		if needsToCrossAPageBoundary {
+			this.amountOfClockCycles++
+		}
+
+		this.programCounterReg = this.absoluteAddress
+	}
+	return 0
+}
+
+func (this *CPU6502) BCC() uint8 {
+	if this.getFlag(carryBit) == 1 {
+		this.amountOfClockCycles++
+		this.absoluteAddress = this.programCounterReg + this.relativeAddress
+
+		needsToCrossAPageBoundary := (this.absoluteAddress & 0xFF00) != (this.programCounterReg & 0xFF00)
+
+		if needsToCrossAPageBoundary {
+			this.amountOfClockCycles++
+		}
+
+		this.programCounterReg = this.absoluteAddress
+	}
+	return 0
+}
+
+func (this *CPU6502) BEQ() uint8 {
+	if this.getFlag(carryBit) == 1 {
+		this.amountOfClockCycles++
+		this.absoluteAddress = this.programCounterReg + this.relativeAddress
+
+		needsToCrossAPageBoundary := (this.absoluteAddress & 0xFF00) != (this.programCounterReg & 0xFF00)
+
+		if needsToCrossAPageBoundary {
+			this.amountOfClockCycles++
+		}
+
+		this.programCounterReg = this.absoluteAddress
+	}
+	return 0
+}
+
+func (this *CPU6502) BMI() uint8 {
+	if this.getFlag(carryBit) == 1 {
+		this.amountOfClockCycles++
+		this.absoluteAddress = this.programCounterReg + this.relativeAddress
+
+		needsToCrossAPageBoundary := (this.absoluteAddress & 0xFF00) != (this.programCounterReg & 0xFF00)
+
+		if needsToCrossAPageBoundary {
+			this.amountOfClockCycles++
+		}
+
+		this.programCounterReg = this.absoluteAddress
+	}
+	return 0
+}
+
+func (this *CPU6502) BNE() uint8 {
+	if this.getFlag(carryBit) == 1 {
+		this.amountOfClockCycles++
+		this.absoluteAddress = this.programCounterReg + this.relativeAddress
+
+		needsToCrossAPageBoundary := (this.absoluteAddress & 0xFF00) != (this.programCounterReg & 0xFF00)
+
+		if needsToCrossAPageBoundary {
+			this.amountOfClockCycles++
+		}
+
+		this.programCounterReg = this.absoluteAddress
+	}
+	return 0
+}
+
+func (this *CPU6502) BPL() uint8 {
+	if this.getFlag(carryBit) == 1 {
+		this.amountOfClockCycles++
+		this.absoluteAddress = this.programCounterReg + this.relativeAddress
+
+		needsToCrossAPageBoundary := (this.absoluteAddress & 0xFF00) != (this.programCounterReg & 0xFF00)
+
+		if needsToCrossAPageBoundary {
+			this.amountOfClockCycles++
+		}
+
+		this.programCounterReg = this.absoluteAddress
+	}
+	return 0
+}
+
+func (this *CPU6502) BVC() uint8 {
+	if this.getFlag(carryBit) == 1 {
+		this.amountOfClockCycles++
+		this.absoluteAddress = this.programCounterReg + this.relativeAddress
+
+		needsToCrossAPageBoundary := (this.absoluteAddress & 0xFF00) != (this.programCounterReg & 0xFF00)
+
+		if needsToCrossAPageBoundary {
+			this.amountOfClockCycles++
+		}
+
+		this.programCounterReg = this.absoluteAddress
+	}
+	return 0
+}
+
+func (this *CPU6502) BVS() uint8 {
+	if this.getFlag(carryBit) == 1 {
+		this.amountOfClockCycles++
+		this.absoluteAddress = this.programCounterReg + this.relativeAddress
+
+		needsToCrossAPageBoundary := (this.absoluteAddress & 0xFF00) != (this.programCounterReg & 0xFF00)
+
+		if needsToCrossAPageBoundary {
+			this.amountOfClockCycles++
+		}
+
+		this.programCounterReg = this.absoluteAddress
+	}
+	return 0
+}
+
+func (this *CPU6502) CLC() uint8 {
+	this.setFlag(carryBit, false)
+	return 0
+}
+
+func (this *CPU6502) CLD() uint8 {
+	this.setFlag(decimalMode, false)
+	return 0
+}
+
+func (this *CPU6502) CLI() uint8 {
+	this.setFlag(disableInterrupts, false)
+	return 0
+}
+
+func (this *CPU6502) CLV() uint8 {
+	this.setFlag(overflow, false)
+	return 0
 }
