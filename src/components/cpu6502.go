@@ -107,10 +107,10 @@ func (this *CPU6502) ResetSignal() {
 	this.statusReg = 0x00 | unused
 
 	this.absoluteAddress = 0xFFFC
-	lowByte := this.read(this.absoluteAddress+0, false)
-	highByte := this.read(this.absoluteAddress+1, false)
+	lowByte := uint16(this.read(this.absoluteAddress+0, false))
+	highByte := uint16(this.read(this.absoluteAddress+1, false))
 
-	this.programCounterReg = uint16((highByte << 8) | lowByte)
+	this.programCounterReg = (highByte << 8) | lowByte
 
 	this.relativeAddress = 0x0000
 	this.absoluteAddress = 0x0000
@@ -121,7 +121,7 @@ func (this *CPU6502) ResetSignal() {
 
 func (this *CPU6502) InterruptRequestSignal() {
 	if this.getFlag(disableInterrupts) == 0 {
-		this.write(STACK_HARCODED_ADDR+uint16(this.stackPointerReg), (uint8(this.programCounterReg)>>8)&0x00FF)
+		this.write(STACK_HARCODED_ADDR+uint16(this.stackPointerReg), uint8((this.programCounterReg>>8)&0x00FF))
 		this.stackPointerReg--
 		this.write(STACK_HARCODED_ADDR+uint16(this.stackPointerReg), uint8(this.programCounterReg)&0x00FF)
 		this.stackPointerReg--
@@ -136,14 +136,14 @@ func (this *CPU6502) InterruptRequestSignal() {
 		this.absoluteAddress = 0xFFFE
 		lowByte := this.read(this.absoluteAddress+0, false)
 		highByte := this.read(this.absoluteAddress+1, false)
-		this.programCounterReg = uint16((highByte << 8) | lowByte)
+		this.programCounterReg = (uint16(highByte) << 8) | uint16(lowByte)
 
 		this.amountOfClockCycles = 7
 	}
 }
 
 func (this *CPU6502) NonMaskableInterruptRequestSignal() {
-	this.write(STACK_HARCODED_ADDR+uint16(this.stackPointerReg), (uint8(this.programCounterReg)>>8)&0x00FF)
+	this.write(STACK_HARCODED_ADDR+uint16(this.stackPointerReg), uint8((this.programCounterReg>>8)&0x00FF))
 	this.stackPointerReg--
 	this.write(STACK_HARCODED_ADDR+uint16(this.stackPointerReg), uint8(this.programCounterReg)&0x00FF)
 	this.stackPointerReg--
@@ -158,7 +158,7 @@ func (this *CPU6502) NonMaskableInterruptRequestSignal() {
 	this.absoluteAddress = 0xFFFA
 	lowByte := this.read(this.absoluteAddress+0, false)
 	highByte := this.read(this.absoluteAddress+1, false)
-	this.programCounterReg = uint16((highByte << 8) | lowByte)
+	this.programCounterReg = (uint16(highByte) << 8) | uint16(lowByte)
 
 	this.amountOfClockCycles = 8
 }
@@ -281,9 +281,9 @@ func (this *CPU6502) IND() uint8 {
 	ptr := (ptrhighByte << 8) | ptrlowByte
 
 	if ptrlowByte == 0x00FF {
-		this.absoluteAddress = uint16((this.read(ptr&0xFF00, false) << 8) | this.read(ptr+0, false))
+		this.absoluteAddress = (uint16(this.read(ptr&0xFF00, false)) << 8) | uint16(this.read(ptr+0, false))
 	} else {
-		this.absoluteAddress = uint16((this.read(ptr+1, false) << 8) | this.read(ptr+0, false))
+		this.absoluteAddress = (uint16(this.read(ptr+1, false)) << 8) | uint16(this.read(ptr+0, false))
 	}
 
 	return 0
