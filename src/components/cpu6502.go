@@ -174,11 +174,11 @@ func (this *CPU6502) fetchData() uint8 {
 }
 
 func (this *CPU6502) write(addr uint16, data uint8) {
-	this.bus.Write(addr, data)
+	this.bus.CPUWrite(addr, data)
 }
 
 func (this *CPU6502) read(addr uint16, readOnly bool) uint8 {
-	return this.bus.Read(addr, false)
+	return this.bus.CPURead(addr, false)
 }
 
 // Addressing Modes
