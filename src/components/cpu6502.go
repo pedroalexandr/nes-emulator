@@ -16,6 +16,8 @@ const (
 	negative          Flag = 1 << 7
 )
 
+const STACK_HARCODED_ADDR uint16 = 0x0100
+
 type instruction struct {
 	name                        string
 	operation                   func() uint8
@@ -34,7 +36,6 @@ type CPU6502 struct {
 	fetchedData         uint8
 	absoluteAddress     uint16
 	relativeAddress     uint16
-	relativeAddr        uint16
 	opCode              uint8
 	amountOfClockCycles uint8
 	lookup              []instruction
@@ -86,7 +87,7 @@ func (this *CPU6502) getFlag(flag Flag) uint8 {
 
 func (this *CPU6502) ClockSignal() {
 	if this.amountOfClockCycles == 0 {
-		this.opCode = this.Read(this.programCounterReg, false)
+		this.opCode = this.read(this.programCounterReg, false)
 		this.programCounterReg++
 		this.amountOfClockCycles = this.lookup[this.opCode].requiredAmountOfClockCycles
 
@@ -99,32 +100,84 @@ func (this *CPU6502) ClockSignal() {
 }
 
 func (this *CPU6502) ResetSignal() {
+	this.accumulatorReg = 0
+	this.xReg = 0
+	this.yReg = 0
+	this.stackPointerReg = 0xFD
+	this.statusReg = 0x00 | unused
 
+	this.absoluteAddress = 0xFFFC
+	lowByte := this.read(this.absoluteAddress+0, false)
+	highByte := this.read(this.absoluteAddress+1, false)
+
+	this.programCounterReg = uint16((highByte << 8) | lowByte)
+
+	this.relativeAddress = 0x0000
+	this.absoluteAddress = 0x0000
+	this.fetchedData = 0x00
+
+	this.amountOfClockCycles = 8
 }
 
 func (this *CPU6502) InterruptRequestSignal() {
+	if this.getFlag(disableInterrupts) == 0 {
+		this.write(STACK_HARCODED_ADDR+uint16(this.stackPointerReg), (uint8(this.programCounterReg)>>8)&0x00FF)
+		this.stackPointerReg--
+		this.write(STACK_HARCODED_ADDR+uint16(this.stackPointerReg), uint8(this.programCounterReg)&0x00FF)
+		this.stackPointerReg--
 
+		this.setFlag(break_, false)
+		this.setFlag(unused, true)
+		this.setFlag(disableInterrupts, true)
+
+		this.write(STACK_HARCODED_ADDR+uint16(this.stackPointerReg), uint8(this.statusReg))
+		this.stackPointerReg--
+
+		this.absoluteAddress = 0xFFFE
+		lowByte := this.read(this.absoluteAddress+0, false)
+		highByte := this.read(this.absoluteAddress+1, false)
+		this.programCounterReg = uint16((highByte << 8) | lowByte)
+
+		this.amountOfClockCycles = 7
+	}
 }
 
 func (this *CPU6502) NonMaskableInterruptRequestSignal() {
+	this.write(STACK_HARCODED_ADDR+uint16(this.stackPointerReg), (uint8(this.programCounterReg)>>8)&0x00FF)
+	this.stackPointerReg--
+	this.write(STACK_HARCODED_ADDR+uint16(this.stackPointerReg), uint8(this.programCounterReg)&0x00FF)
+	this.stackPointerReg--
 
+	this.setFlag(break_, false)
+	this.setFlag(unused, true)
+	this.setFlag(disableInterrupts, true)
+
+	this.write(STACK_HARCODED_ADDR+uint16(this.stackPointerReg), uint8(this.statusReg))
+	this.stackPointerReg--
+
+	this.absoluteAddress = 0xFFFA
+	lowByte := this.read(this.absoluteAddress+0, false)
+	highByte := this.read(this.absoluteAddress+1, false)
+	this.programCounterReg = uint16((highByte << 8) | lowByte)
+
+	this.amountOfClockCycles = 8
 }
 
-func (this *CPU6502) FetchData() uint8 {
+func (this *CPU6502) fetchData() uint8 {
 	addressingModeIsNotImplied := !(reflect.ValueOf(this.lookup[this.opCode].addressingMode).Pointer() == reflect.ValueOf(this.IMP).Pointer())
 
 	if addressingModeIsNotImplied {
-		this.fetchedData = this.Read(this.absoluteAddress, false)
+		this.fetchedData = this.read(this.absoluteAddress, false)
 	}
 
 	return this.fetchedData
 }
 
-func (this *CPU6502) Write(addr uint16, data uint8) {
+func (this *CPU6502) write(addr uint16, data uint8) {
 	this.bus.Write(addr, data)
 }
 
-func (this *CPU6502) Read(addr uint16, readOnly bool) uint8 {
+func (this *CPU6502) read(addr uint16, readOnly bool) uint8 {
 	return this.bus.Read(addr, false)
 }
 
@@ -141,28 +194,28 @@ func (this *CPU6502) IMM() uint8 {
 }
 
 func (this *CPU6502) ZP0() uint8 {
-	this.absoluteAddress = uint16(this.Read(this.programCounterReg, false))
+	this.absoluteAddress = uint16(this.read(this.programCounterReg, false))
 	this.programCounterReg++
 	this.absoluteAddress &= 0x00FF
 	return 0
 }
 
 func (this *CPU6502) ZPX() uint8 {
-	this.absoluteAddress = uint16(this.Read(this.programCounterReg, false) + this.xReg)
+	this.absoluteAddress = uint16(this.read(this.programCounterReg, false) + this.xReg)
 	this.programCounterReg++
 	this.absoluteAddress &= 0x00FF
 	return 0
 }
 
 func (this *CPU6502) ZPY() uint8 {
-	this.absoluteAddress = uint16(this.Read(this.programCounterReg, false) + this.yReg)
+	this.absoluteAddress = uint16(this.read(this.programCounterReg, false) + this.yReg)
 	this.programCounterReg++
 	this.absoluteAddress &= 0x00FF
 	return 0
 }
 
 func (this *CPU6502) REL() uint8 {
-	this.relativeAddress = uint16(this.Read(this.programCounterReg, false))
+	this.relativeAddress = uint16(this.read(this.programCounterReg, false))
 	this.programCounterReg++
 
 	if this.relativeAddress&0x80 != 0 {
@@ -173,9 +226,9 @@ func (this *CPU6502) REL() uint8 {
 }
 
 func (this *CPU6502) ABS() uint8 {
-	lowByte := uint16(this.Read(this.programCounterReg, false))
+	lowByte := uint16(this.read(this.programCounterReg, false))
 	this.programCounterReg++
-	highByte := uint16(this.Read(this.programCounterReg, false))
+	highByte := uint16(this.read(this.programCounterReg, false))
 	this.programCounterReg++
 
 	this.absoluteAddress = (highByte << 8) | lowByte
@@ -184,9 +237,9 @@ func (this *CPU6502) ABS() uint8 {
 }
 
 func (this *CPU6502) ABX() uint8 {
-	lowByte := uint16(this.Read(this.programCounterReg, false))
+	lowByte := uint16(this.read(this.programCounterReg, false))
 	this.programCounterReg++
-	highByte := uint16(this.Read(this.programCounterReg, false))
+	highByte := uint16(this.read(this.programCounterReg, false))
 	this.programCounterReg++
 
 	this.absoluteAddress = (highByte << 8) | lowByte
@@ -202,9 +255,9 @@ func (this *CPU6502) ABX() uint8 {
 }
 
 func (this *CPU6502) ABY() uint8 {
-	lowByte := uint16(this.Read(this.programCounterReg, false))
+	lowByte := uint16(this.read(this.programCounterReg, false))
 	this.programCounterReg++
-	highByte := uint16(this.Read(this.programCounterReg, false))
+	highByte := uint16(this.read(this.programCounterReg, false))
 	this.programCounterReg++
 
 	this.absoluteAddress = (highByte << 8) | lowByte
@@ -220,28 +273,28 @@ func (this *CPU6502) ABY() uint8 {
 }
 
 func (this *CPU6502) IND() uint8 {
-	ptrlowByte := uint16(this.Read(this.programCounterReg, false))
+	ptrlowByte := uint16(this.read(this.programCounterReg, false))
 	this.programCounterReg++
-	ptrhighByte := uint16(this.Read(this.programCounterReg, false))
+	ptrhighByte := uint16(this.read(this.programCounterReg, false))
 	this.programCounterReg++
 
 	ptr := (ptrhighByte << 8) | ptrlowByte
 
 	if ptrlowByte == 0x00FF {
-		this.absoluteAddress = uint16((this.Read(ptr&0xFF00, false) << 8) | this.Read(ptr+0, false))
+		this.absoluteAddress = uint16((this.read(ptr&0xFF00, false) << 8) | this.read(ptr+0, false))
 	} else {
-		this.absoluteAddress = uint16((this.Read(ptr+1, false) << 8) | this.Read(ptr+0, false))
+		this.absoluteAddress = uint16((this.read(ptr+1, false) << 8) | this.read(ptr+0, false))
 	}
 
 	return 0
 }
 
 func (this *CPU6502) IZX() uint8 {
-	offsetIntoTheZerothPage := this.Read(this.programCounterReg, false)
+	offsetIntoTheZerothPage := this.read(this.programCounterReg, false)
 	this.programCounterReg++
 
-	lowByte := uint16(this.Read(uint16((offsetIntoTheZerothPage+this.xReg))&0x00FF, false))
-	highByte := uint16(this.Read(uint16((offsetIntoTheZerothPage+this.xReg+1))&0x00FF, false))
+	lowByte := uint16(this.read(uint16((offsetIntoTheZerothPage+this.xReg))&0x00FF, false))
+	highByte := uint16(this.read(uint16((offsetIntoTheZerothPage+this.xReg+1))&0x00FF, false))
 
 	this.absoluteAddress = (highByte << 8) | lowByte
 
@@ -249,11 +302,11 @@ func (this *CPU6502) IZX() uint8 {
 }
 
 func (this *CPU6502) IZY() uint8 {
-	offsetIntoTheZerothPage := this.Read(this.programCounterReg, false)
+	offsetIntoTheZerothPage := this.read(this.programCounterReg, false)
 	this.programCounterReg++
 
-	lowByte := uint16(this.Read(uint16(offsetIntoTheZerothPage)&0x00FF, false))
-	highByte := uint16(this.Read(uint16(offsetIntoTheZerothPage+1)&0x00FF, false))
+	lowByte := uint16(this.read(uint16(offsetIntoTheZerothPage)&0x00FF, false))
+	highByte := uint16(this.read(uint16(offsetIntoTheZerothPage+1)&0x00FF, false))
 
 	this.absoluteAddress = (highByte << 8) | lowByte
 	this.absoluteAddress += uint16(this.yReg)
@@ -269,18 +322,19 @@ func (this *CPU6502) IZY() uint8 {
 
 // Operations
 func (this *CPU6502) ERR() uint8 { // Non-legitimate OpCode handling
-
+	return 0
 }
 
 func (this *CPU6502) ADC() uint8 {
-	this.FetchData()
+	this.fetchData()
 	temp := uint16(this.accumulatorReg) + uint16(this.fetchedData) + uint16(this.getFlag(carryBit))
 	this.setFlag(carryBit, temp > 255)
 	this.setFlag(zero, (temp&0x00FF) == 0)
-	this.setFlag(negative, temp&0x80 != 0)
 
 	hasOverflowed := (^(uint16(this.accumulatorReg) ^ uint16(this.fetchedData)) & (uint16(this.accumulatorReg) ^ uint16(temp)) & 0x0080) != 0
 	this.setFlag(overflow, hasOverflowed)
+
+	this.setFlag(negative, temp&0x80 != 0)
 
 	this.accumulatorReg = uint8(temp & 0x00FF)
 
@@ -288,11 +342,15 @@ func (this *CPU6502) ADC() uint8 {
 }
 
 func (this *CPU6502) AND() uint8 {
-	this.FetchData()
+	this.fetchData()
 	this.accumulatorReg &= this.fetchedData
 	this.setFlag(zero, this.accumulatorReg == 0x00)
 	this.setFlag(negative, this.accumulatorReg&0x80 != 0)
 	return 1
+}
+
+func (this *CPU6502) ASL() uint8 {
+	return 0 // not implemented
 }
 
 func (this *CPU6502) BCS() uint8 {
@@ -343,6 +401,10 @@ func (this *CPU6502) BEQ() uint8 {
 	return 0
 }
 
+func (this *CPU6502) BIT() uint8 {
+	return 0 // not implemented
+}
+
 func (this *CPU6502) BMI() uint8 {
 	if this.getFlag(carryBit) == 1 {
 		this.amountOfClockCycles++
@@ -389,6 +451,10 @@ func (this *CPU6502) BPL() uint8 {
 		this.programCounterReg = this.absoluteAddress
 	}
 	return 0
+}
+
+func (this *CPU6502) BRK() uint8 {
+	return 0 // not implemented
 }
 
 func (this *CPU6502) BVC() uint8 {
@@ -441,4 +507,188 @@ func (this *CPU6502) CLI() uint8 {
 func (this *CPU6502) CLV() uint8 {
 	this.setFlag(overflow, false)
 	return 0
+}
+
+func (this *CPU6502) CMP() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) CPX() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) CPY() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) DEC() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) DEX() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) DEY() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) EOR() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) INC() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) INX() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) INY() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) JMP() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) JSR() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) LDA() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) LDX() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) LDY() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) LSR() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) NOP() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) ORA() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) PHA() uint8 {
+	this.write(STACK_HARCODED_ADDR+uint16(this.stackPointerReg), this.accumulatorReg)
+	this.stackPointerReg--
+	return 0
+}
+
+func (this *CPU6502) PHP() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) PLA() uint8 {
+	this.stackPointerReg++
+	this.accumulatorReg = this.read(STACK_HARCODED_ADDR+uint16(this.stackPointerReg), false)
+	this.setFlag(zero, this.accumulatorReg == 0x00)
+	this.setFlag(negative, this.accumulatorReg&0x80 != 0)
+	return 0
+}
+
+func (this *CPU6502) PLP() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) ROL() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) ROR() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) RTI() uint8 {
+	this.stackPointerReg++
+	this.statusReg = Flag(this.read(STACK_HARCODED_ADDR+uint16(this.stackPointerReg), false))
+	this.statusReg &= ^break_
+	this.statusReg &= ^unused
+
+	this.stackPointerReg++
+	this.programCounterReg = uint16(this.read(STACK_HARCODED_ADDR+uint16(this.stackPointerReg), false))
+	this.stackPointerReg++
+	this.programCounterReg |= uint16(this.read(STACK_HARCODED_ADDR+uint16(this.stackPointerReg), false)) << 8
+
+	return 0
+}
+
+func (this *CPU6502) RTS() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) SBC() uint8 {
+	this.fetchData()
+	value := uint16(this.fetchedData) ^ 0x00FF
+	temp := uint16(this.accumulatorReg) + value + uint16(this.getFlag(carryBit))
+	this.setFlag(carryBit, temp > 255)
+	this.setFlag(zero, (temp&0x00FF) == 0)
+
+	hasOverflowed := ((temp ^ uint16(this.accumulatorReg)) & (temp ^ value) & 0x0080) != 0
+	this.setFlag(overflow, hasOverflowed)
+	this.setFlag(negative, temp&0x80 != 0)
+
+	this.accumulatorReg = uint8(temp & 0x00FF)
+
+	return 1
+}
+
+func (this *CPU6502) SEC() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) SED() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) SEI() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) STA() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) STX() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) STY() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) TAX() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) TAY() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) TSX() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) TXA() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) TXS() uint8 {
+	return 0 // not implemented
+}
+
+func (this *CPU6502) TYA() uint8 {
+	return 0 // not implemented
 }
